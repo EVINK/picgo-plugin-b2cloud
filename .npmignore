@@ -1,0 +1,8 @@
+node_modules/
+yarn-error.log
+tsconfig.json
+.vscode/
+src/
+.travis.yml
+.eslintrc.js
+.gitignore
