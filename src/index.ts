@@ -4,7 +4,7 @@ import tmp from 'tmp'
 import { IImgInfo, IPicGo } from 'picgo'
 import { IPluginConfig } from 'picgo/dist/utils/interfaces'
 
-import b2CloudStorage from 'b2-cloud-storage'
+import { B2 } from './b2-service'
 
 const config = (ctx: IPicGo): IPluginConfig[] => {
     const userConfig = ctx.getConfig<B2CloudConfig>('picBed.b2cloud-uploader') ||
@@ -27,7 +27,7 @@ const config = (ctx: IPicGo): IPluginConfig[] => {
         },
         {
             name: 'applicationKey',
-            type: 'password',
+            type: 'input',
             alias: 'ApplicationKey',
             default: userConfig.applicationKey || '',
             message: '',
@@ -69,73 +69,74 @@ const config = (ctx: IPicGo): IPluginConfig[] => {
     ]
 }
 
-let b2 : b2CloudStorage
+async function upload (configs: B2CloudConfig, img: IImgInfo, ctx: IPicGo) {
+    const tmpObj = tmp.fileSync()
+    const path = tmpObj.name
+    fs.appendFileSync(path, img.buffer!)
 
-function upload (configs: B2CloudConfig, img: IImgInfo) {
-    return new Promise<string>((resolve, reject) => {
+    // 为使用户变更即时生效，每次上传覆盖实例
+    B2.b2Secrets = {
+        keyId: configs.accountId,
+        applicationKey: configs.applicationKey,
+        bucketId: configs.bucketId
+    }
+    const prefix = configs.path ? configs.path : ''
 
-        const tmpObj = tmp.fileSync()
-        const path = tmpObj.name
-        fs.appendFileSync(path, img.buffer!)
-        delete img.buffer
-
-        // 为使用户变更即时生效，每次上传覆盖实例
-        b2 = new b2CloudStorage({
-            auth: {
-                accountId: configs.accountId,
-                applicationKey: configs.applicationKey
-            }
+    try {
+        const fileName = await B2.upload2B2({
+            filePath: path,
+            prefix,
+            fileName: img.fileName!,
+            fileSize: img.buffer!.length,
+            fileBuffer: img.buffer!,
         })
-
-        b2.authorize((err) => {
-            if (err) { return reject(Error(`B2 Auth error: ${err}`)) }
-            b2.uploadFile(tmpObj.name, {
-                bucketId: configs.bucketId,
-                fileName: `${configs.path ? configs.path: ''}${img.fileName!}`,
-            }, (err, results) => {
-                tmpObj.removeCallback()
-                if (err) return reject(Error(`Upload to B2Cloud Failed: ${err}`))
-                resolve(results.fileName)
-            })
+        return fileName
+    } catch (e) {
+        ctx.emit('notification', {
+            title: 'Error:' + e,
+            body: e
         })
-    })
+        throw e
+    }
 }
 
-function handle (ctx: IPicGo) {
+async function handle (ctx: IPicGo) {
     const configs = ctx.getConfig<B2CloudConfig>('picBed.b2cloud-uploader')
     if (!configs) {
         throw new Error('找不到B2Cloud的配置文件')
     }
-    try {
-        const images = ctx.output
-        images.forEach(img => {
-            if (!img.buffer || !img.fileName) throw Error('Bug: Not image buffer found.')
-            // await upload(configs, img)
-            upload(configs, img)
-                .then((fileName: string) => {
-                    // 异步会导致PicGo无法获取imgUrl
-                    // img.imgUrl = `${configs.domain}/${configs.path ? configs.path : '/'}${fileName}${configs.imageProcess}`
-                    ctx.emit('notification', {
-                        title: `B2上传完成: ${img.fileName}`,
-                        body: img.imgUrl
-                    })
-                }).catch(err => {
-                    ctx.emit('notification', {
-                        title: `B2上传失败: ${img.fileName}`,
-                        body: err.message
-                    })
-                })
-            // PicGo会监视此属性，一旦赋值就会提前通知上传成功，但此时尚未上传成功
-            img.imgUrl = `${configs.domain}/${configs.path ? configs.path : '/'}${img.fileName}${configs.imageProcess}`
+
+    B2.b2Secrets = {
+        keyId: configs.accountId,
+        applicationKey: configs.applicationKey,
+        bucketId: configs.bucketId
+    }
+    B2.ctx = ctx
+
+    const images = ctx.output
+    const promises = []
+    for (const img of images) {
+        if (!img.buffer || !img.fileName) throw Error('Bug: Not image buffer found.')
+        promises.push(upload(configs, img, ctx))
+    }
+    const results = await Promise.all(promises).catch(e=>e)
+
+    if (results instanceof Error) {
+        ctx.emit('notification', {
+            title: '上传到B2失败:' + results
         })
         return ctx
-    } catch (err) {
-        const message = (err as Error).message
-        ctx.emit('notification', {
-            title: '上传失败！',
-            body: message
-        })
     }
+    let i = 0
+    for (const result of results) {
+        images[i].imgUrl = `${configs.domain}/${result}${configs.imageProcess}`
+        ctx.emit('notification', {
+            title: `B2上传完成: ${result}`,
+            body: result
+        })
+        i++
+    }
+    return ctx
 }
 
 export = (ctx: IPicGo) => {
