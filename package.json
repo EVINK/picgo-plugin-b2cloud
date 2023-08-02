@@ -8,8 +8,8 @@
   },
   "homepage": "https://github.com/EVINK/picgo-plugin-b2cloud",
   "scripts": {
-    "build": "./node_modules/typescript/bin/tsc -p .",
-    "dev": "./node_modules/typescript/bin/tsc -w -p ."
+    "build": "tsc -p .",
+    "dev": "tsc -w -p ."
   },
   "keywords": [
     "picgo",
