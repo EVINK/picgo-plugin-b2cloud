@@ -20,7 +20,7 @@ $ yarn && yarn build
 
 3. 在 __PicGo__ 中选择 __导入本地插件__,点选本地文件夹 __picgo-plugin-b2cloud__
 
-![](https://img.evink.cn/picgo/local-installation.webp)
+![](https://cdn.evink.cn/picgo/local-installation.webp)
 
 ## 配置文件说明
 
@@ -29,7 +29,7 @@ $ yarn && yarn build
 前往 <https://secure.backblaze.com/app_keys.htm>，点击添加一个新的Application Key
 
 
-![](https://img.evink.cn/picgo/b2cloud-appkey.webp)
+![](https://cdn.evink.cn/picgo/b2cloud-appkey.webp)
 
 ### 2. 访问前缀
 
